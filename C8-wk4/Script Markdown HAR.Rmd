@@ -1,0 +1,203 @@
+---
+title: "C8wk08"
+author: "OlivierBQ"
+date: "08-10-2017"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+###Background of this research
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+###Research question
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We may use any of the other variables to predict with. We should create a report describing how we built our model, how we used cross validation, what we think the expected out of sample error is, and why we made the choices we did. We will also use our prediction model to predict 20 different test cases.
+
+
+
+
+### Step 1 Install packages
+
+The first step is to install and load all the recuired packages not usually present in R. 
+```{r, install package, results='hide', message= FALSE, warning= FALSE}
+library(caret)
+library(C50)
+library(plyr)
+library(dplyr)
+library(randomForest)
+library(data.table)
+```
+
+### Step 2 Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If the documents or data is used for anay other purpose please cite them as they have been very generous in allowing their data to be used for this kind of research.
+
+After installing the packages we will load the HAR dataset which includes a training and test data file
+```{r, load data, results='hide', message= FALSE, warning= FALSE}
+trainingFile <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testFile <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+# because of the nature of the csv file we transformed all the observations containing #DIV/0 to na, when reading the csv file this was discovered. 
+training <- read.csv(trainingFile, na.string= "#DIV/0!")
+test <- read.csv(testFile)
+
+```
+
+
+In the exploration of the dataset we look at the different variables which are accounted for in the training dataset. 
+```{r, explore data, results='hide', message= FALSE, warning= FALSE}
+head(training)
+str(training)
+summary(training$user_name)
+summary(training$classe)
+```
+
+```{r}
+dim(training)
+```
+
+
+The results show that there are 19622 observations in the training data set with 160 observations. The dtrings are diverse with both factor as numeric  In order to make a good decission how to clean up the training set we will look at the number of na's in the dataset.  
+
+```{r, check na, results='hide', message= FALSE, warning= FALSE}
+na_count <- sapply(training, function(y) sum(length(which(is.na(y)))))
+
+na_count <- data.frame(na_count)
+
+na_count
+
+```
+
+
+The result shows that there are a numerious observations that have non available (NA) data. In order to correct this we wil exlude all the 
+``` {r, clean dataset, results='hide', message= FALSE, warning= FALSE}
+dataset <- training[ -c(1:7) ]
+for(i in c(8:ncol(dataset)-1)){dataset[,i] = as.numeric(as.character(dataset[,i]))}
+dataset <- dataset[,colSums(is.na(dataset))==0]
+```
+
+With the cleaning process above, the number of variables for the analysis has been reduced to 54 only. In order tpo start with the machine learning proces we will devide the training data set in two parts to be able to classify and train the set and also test the dataset on the notated classes. 
+
+
+```{r, create train and test set, results='hide', message= FALSE, warning= FALSE}
+inTrain  <- createDataPartition(dataset$classe, p=0.75, list=FALSE)
+Trainset <- dataset[inTrain, ]
+Testset  <- dataset[-inTrain, ]
+```
+
+
+### Predictive Model Building
+
+We start the exploration into the classification of the data by examining the different possible machine learning algorithms. In order to do so we start bu tacking a subset of the training data to enhance the proces. This subset contains 5000 randomly selected observations. We also set the traincontrol to Cross-Validation with a 10 fold cv split. The metric that we will base our decission on is the Accurracy of the different models. 
+
+```{r, ML exploration settings,results='hide', message= FALSE, warning= FALSE}
+DS <- Trainset[sample(nrow(Trainset),5000),]
+control <- trainControl(method="cv", number=10)
+metric <- "Accuracy"
+```
+
+##Explore different ML model
+
+The ML models that we will explore are the most commonly used models namely Decision Tree, Principle Component Analysis, K-Nearest-Neighbours, Support Vector Machine and Random Forest. The seed is set at 4.  
+
+```{r, Explore ML algorithms, cache=TRUE, results='hide', message= FALSE, warning= FALSE}
+## Decision Tree
+set.seed(4)
+fit.dt <- train(classe~., data=DS, method="C5.0", metric=metric, trControl=control)
+ 
+## PCA
+set.seed(4)
+fit.pca <- train(classe~., data=DS, method="multinom", metric=metric, trControl=control)
+
+## kNN
+set.seed(4)
+fit.knn <- train(classe~., data=DS, method="knn", metric=metric, trControl=control)
+
+## SVM
+set.seed(4)
+fit.svm1 <- train(classe~., data=DS, method="svmRadial", metric=metric, trControl=control)
+
+## Random Forest
+set.seed(4)
+fit.rf1 <- train(classe~., data=DS, method="rf", metric=metric, trControl=control)
+
+```
+
+After all the models have been trained we will compair the results. The first overview is in a dotplot. 
+```{r, Compare results, message= FALSE, warning= FALSE}
+# dot plots of accuracy
+results <- resamples(list(DT= fit.dt, PCA=fit.pca, KNN=fit.knn, SVM=fit.svm1, RF=fit.rf1))
+scales <- list(x=list(relation="free"), y=list(relation="free"))
+dotplot(results, scales=scales)
+```
+
+The dotplot shows us that the decision tree and random forest are the most accurat predicters of the classe of excersise. To make a final decision we make a table containing the different results.  
+```{r, make final decision, message= FALSE, warning= FALSE }
+
+summary(results)
+
+```
+The summary shows that the Random Forest has the highest accurracy in predicting the classe of the observations. We will use the Random Forest model on the entire Training data set to make a model fit. 
+
+```{r, ML on dataset, cache=TRUE, message= FALSE, warning= FALSE}
+##Use the most acurate methode to make the modfit algorithm on the whole training set
+
+
+modfit <- train(classe~., data=Trainset, method="rf", metric=metric, trControl=control, ntree=50)
+
+confusionMatrix(modfit)
+```
+The confusion matrix shows a 99 percent accurracy in predicting the class. 
+```{r, Predict trainingset}
+
+predictTest <- predict(modfit, Testset)
+
+Testset$classepred <- predictTest
+```
+
+```{r, compare results, message= FALSE, warning= FALSE}
+
+confusionMatrix(table(Testset$classepred, Testset$classe))
+
+```
+
+The training test set also show a really high accuracy of 99.8 percent. We can conclude that the model is accurate so we will use it to get on with the final step predicting the class of the test set. 
+
+##Predicting the test outcome
+In the trainingset the model shows to have a good accurracy in predicting the classe of the observations. Next up we will use the model to predict the classe of a testset where the classe is unknown.
+
+```{r}
+dim(test)
+```
+
+As we can see the test set includes 20 observations with 159 observations. We wil predict the classe of the excersises based on the model we made earlier. 
+```{r, message= FALSE, warning= FALSE}
+
+Predict <- predict(modfit, test)
+
+```
+The results of the prediction is shown below
+```{r, message= FALSE, warning= FALSE}
+df.Predict <- transpose(data.frame(Predict))
+names(df.Predict) <- c(1:20)
+
+df.Predict
+```
+
+
+
+
+
